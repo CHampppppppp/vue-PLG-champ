@@ -1,0 +1,21 @@
+@import './base.css';
+
+#app {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  font-weight: normal;
+}
+
+a {
+  text-decoration: none;
+  color: #409eff;
+  transition: 0.3s;
+}
+
+a:hover {
+  color: #66b1ff;
+}
+
+/* 移除之前的媒体查询，避免与我们的布局冲突 */
