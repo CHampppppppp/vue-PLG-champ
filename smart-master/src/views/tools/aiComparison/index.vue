@@ -3,17 +3,42 @@
     <div class="ai-content-wrapper">
       <!-- 左侧对话区域 -->
       <div class="ai-chat-container">
-        <div class="feature-card">
-          <div class="card-header">
+        <AppCard
+          class="feature-card"
+          elevated
+          :padded="false"
+          v-loading="loading"
+          element-loading-text="AI 正在生成教学资源..."
+          element-loading-background="rgba(255, 255, 255, 0.6)"
+          title="AI工作台"
+        >
+          <template #icon>
             <el-icon><ChatDotRound /></el-icon>
-            <h3>AI工作台</h3>
-            <div class="card-tools">
-              <el-button type="primary" plain size="small" @click="clearConversation" :disabled="loading">
-                <el-icon><Delete /></el-icon> 清空对话
-              </el-button>
-            </div>
-          </div>
+          </template>
+          <template #actions>
+            <el-button type="primary" plain size="small" @click="clearConversation" :disabled="loading">
+              <el-icon><Delete /></el-icon> 清空对话
+            </el-button>
+          </template>
           <div class="card-content">
+            <transition name="guide-fade">
+              <div v-if="showGuideBanner" class="guide-banner">
+                <h4>快速开始</h4>
+                <p>建议先提供以下信息，帮助AI更精准生成教学资源：</p>
+                <ul>
+                  <li>课程主题与知识点范围</li>
+                  <li>班级学情或学生薄弱点</li>
+                  <li>期望输出的资源类型（教案、作业等）</li>
+                </ul>
+                <el-alert
+                  title="提示"
+                  type="info"
+                  :closable="false"
+                  description="支持 Ctrl + Enter 快速发送，生成期间可在右侧编辑器实时查看内容。"
+                  show-icon
+                />
+              </div>
+            </transition>
             <div class="message-box" ref="messageBoxRef">
               <transition-group name="message-fade">
                 <div
@@ -132,14 +157,13 @@
               </div>
             </div>
           </div>
-        </div>
+        </AppCard>
       </div>
       
       <!-- 右侧编辑区域 -->
       <div class="ai-editor-container">
-        <div class="editor-card">
-          <div class="card-header">
-            <h3>{{ editorTitle }}</h3>
+        <AppCard class="editor-card" elevated :padded="false" :title="editorTitle">
+          <template #actions>
             <div class="card-tools">
               <el-button-group>
                 <el-button type="primary" @click="exportEditorContent" size="small" :icon="Download" color="#4e89e0">
@@ -150,11 +174,11 @@
                 </el-button>
               </el-button-group>
             </div>
-          </div>
+          </template>
           <div class="editor-content">
             <div ref="editorRef" class="rich-text-editor"></div>
           </div>
-        </div>
+        </AppCard>
       </div>
     </div>
     
@@ -202,6 +226,7 @@ import {
   Download,
   Edit
 } from '@element-plus/icons-vue'
+import AppCard from '@/components/common/AppCard.vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { generateContent } from '@/api/deepseek'
 import { generatePPT } from '@/api/xunfei'
@@ -210,13 +235,44 @@ import { marked } from 'marked'
 import { debounce } from 'lodash-es'
 import html2pdf from 'html2pdf.js'
 import { useRouter } from 'vue-router'
-import EditorJS from '@editorjs/editorjs'
-import Header from '@editorjs/header'
-import List from '@editorjs/list'
-import Quote from '@editorjs/quote'
-import Code from '@editorjs/code'
-import Table from '@editorjs/table'
-import Delimiter from '@editorjs/delimiter'
+
+let EditorConstructor = null
+let HeaderTool = null
+let ListTool = null
+let QuoteTool = null
+let CodeTool = null
+let TableTool = null
+let DelimiterTool = null
+
+const ensureEditorModules = async () => {
+  if (!EditorConstructor) {
+    const [
+      { default: EditorJSMod },
+      { default: HeaderMod },
+      { default: ListMod },
+      { default: QuoteMod },
+      { default: CodeMod },
+      { default: TableMod },
+      { default: DelimiterMod }
+    ] = await Promise.all([
+      import('@editorjs/editorjs'),
+      import('@editorjs/header'),
+      import('@editorjs/list'),
+      import('@editorjs/quote'),
+      import('@editorjs/code'),
+      import('@editorjs/table'),
+      import('@editorjs/delimiter')
+    ])
+
+    EditorConstructor = EditorJSMod
+    HeaderTool = HeaderMod
+    ListTool = ListMod
+    QuoteTool = QuoteMod
+    CodeTool = CodeMod
+    TableTool = TableMod
+    DelimiterTool = DelimiterMod
+  }
+}
 
 // 配置marked渲染器
 const renderer = new marked.Renderer()
@@ -248,6 +304,7 @@ const messages = ref([
   }
 ])
 const loading = ref(false)
+const showGuideBanner = computed(() => messages.value.length === 1 && messages.value[0].role === 'assistant' && !loading.value)
 const messageBoxRef = ref(null)
 const editorRef = ref(null)
 let editor = null
@@ -359,8 +416,9 @@ const initEditor = () => {
     editor.destroy()
   }
   
-  nextTick(() => {
+  nextTick(async () => {
     if (editorRef.value) {
+      await ensureEditorModules()
       // 确定数据源，确保正确处理内容类型
       let editorData = { blocks: [] };
       
@@ -383,11 +441,11 @@ const initEditor = () => {
         }
       }
       
-      editor = new EditorJS({
+      editor = new EditorConstructor({
         holder: editorRef.value,
         tools: {
           header: {
-            class: Header,
+            class: HeaderTool,
             inlineToolbar: true,
             config: {
               levels: [1, 2, 3, 4, 5, 6],
@@ -395,21 +453,21 @@ const initEditor = () => {
             }
           },
           list: {
-            class: List,
+            class: ListTool,
             inlineToolbar: true
           },
           quote: {
-            class: Quote,
+            class: QuoteTool,
             inlineToolbar: true
           },
           code: {
-            class: Code
+            class: CodeTool
           },
           table: {
-            class: Table
+            class: TableTool
           },
           delimiter: {
-            class: Delimiter
+            class: DelimiterTool
           }
         },
         placeholder: '请在这里编辑内容...',
@@ -701,163 +759,15 @@ const getActionTooltip = (type) => {
   return tooltipMap[type] || '操作';
 }
 
-// 在编辑器中打开内容
-const editInEditor = () => {
+const editInEditor = async () => {
   editorContent.value = previewContent.value
   editorTitle.value = previewTitle.value
   editorType.value = previewType.value
   
-  // 关闭预览对话框
   previewDialogVisible.value = false
-  
-  // 将markdown内容转换为块级结构
-  const markdownToBlocks = (markdown) => {
-    const lines = markdown.split('\n')
-    const blocks = []
-    
-    let currentBlock = null
-    
-    lines.forEach(line => {
-      line = line.trim()
-      
-      if (line.startsWith('# ')) {
-        blocks.push({
-          type: 'header',
-          data: {
-            text: line.substring(2),
-            level: 1
-          }
-        })
-      } else if (line.startsWith('## ')) {
-        blocks.push({
-          type: 'header',
-          data: {
-            text: line.substring(3),
-            level: 2
-          }
-        })
-      } else if (line.startsWith('### ')) {
-        blocks.push({
-          type: 'header',
-          data: {
-            text: line.substring(4),
-            level: 3
-          }
-        })
-      } else if (line.startsWith('- ') || line.startsWith('* ')) {
-        if (!currentBlock || currentBlock.type !== 'list' || currentBlock.data.style !== 'unordered') {
-          currentBlock = {
-            type: 'list',
-            data: {
-              style: 'unordered',
-              items: []
-            }
-          }
-          blocks.push(currentBlock)
-        }
-        
-        currentBlock.data.items.push(line.substring(2))
-      } else if (line.match(/^\d+\. /)) {
-        if (!currentBlock || currentBlock.type !== 'list' || currentBlock.data.style !== 'ordered') {
-          currentBlock = {
-            type: 'list',
-            data: {
-              style: 'ordered',
-              items: []
-            }
-          }
-          blocks.push(currentBlock)
-        }
-        
-        currentBlock.data.items.push(line.substring(line.indexOf('.') + 2))
-      } else if (line.startsWith('> ')) {
-        blocks.push({
-          type: 'quote',
-          data: {
-            text: line.substring(2),
-            caption: ''
-          }
-        })
-      } else if (line.startsWith('```')) {
-        // 代码块开始
-        const lang = line.substring(3)
-        let code = ''
-        let i = lines.indexOf(line) + 1
-        
-        while (i < lines.length && !lines[i].startsWith('```')) {
-          code += lines[i] + '\n'
-          i++
-        }
-        
-        blocks.push({
-          type: 'code',
-          data: {
-            code,
-            language: lang || 'javascript'
-          }
-        })
-      } else if (line === '---') {
-        blocks.push({
-          type: 'delimiter',
-          data: {}
-        })
-      } else if (line !== '') {
-        blocks.push({
-          type: 'paragraph',
-          data: {
-            text: line
-          }
-        })
-      }
-    })
-    
-    return { blocks }
-  }
-  
-  // 初始化编辑器
-  if (editor) {
-    editor.destroy()
-  }
-  
-  nextTick(() => {
-    if (editorRef.value) {
-      editor = new EditorJS({
-        holder: editorRef.value,
-        tools: {
-          header: {
-            class: Header,
-            inlineToolbar: true,
-            config: {
-              levels: [1, 2, 3, 4, 5, 6],
-              defaultLevel: 2
-            }
-          },
-          list: {
-            class: List,
-            inlineToolbar: true
-          },
-          quote: {
-            class: Quote,
-            inlineToolbar: true
-          },
-          code: {
-            class: Code
-          },
-          table: {
-            class: Table
-          },
-          delimiter: {
-            class: Delimiter
-          }
-        },
-        placeholder: '请输入内容...',
-        data: markdownToBlocks(editorContent.value),
-        minHeight: 300
-      })
-      
-      ElMessage.success(`${previewTitle.value}已加载到编辑器`);
-    }
-  })
+  await nextTick()
+  initEditor()
+  ElMessage.success(`${previewTitle.value}已加载到编辑器`)
 }
 
 // 导出编辑器内容
@@ -960,6 +870,80 @@ const exportEditorContent = async () => {
   }
 }
 
+const delay = (ms = 300) => new Promise((resolve) => setTimeout(resolve, ms))
+
+const runStep = async (messageIndex, stepIndex, taskFn) => {
+  const step = messages.value[messageIndex]?.steps?.[stepIndex]
+  if (!step) return null
+
+  step.current = true
+  step.completed = false
+  step.progress = 10
+
+  try {
+    await delay(250)
+    const result = taskFn ? await taskFn() : null
+    step.progress = 100
+    step.completed = true
+    return result
+  } finally {
+    step.current = false
+  }
+}
+
+const processGeneration = async (prompt, aiMessageIndex) => {
+  const steps = messages.value[aiMessageIndex]?.steps
+  if (!steps) return
+
+  messages.value[aiMessageIndex].content = '我正在分析您提供的教学大纲，生成过程中请稍候...'
+
+  await runStep(aiMessageIndex, 0, async () => delay(600))
+
+  const homeworkContent = await runStep(aiMessageIndex, 1, async () => {
+    return await generateContent(prompt, 'homework')
+  })
+
+  const lessonPlanContent = await runStep(aiMessageIndex, 2, async () => {
+    return await generateContent(prompt, 'lesson_plan')
+  })
+
+  await runStep(aiMessageIndex, 3, async () => delay(400))
+  await runStep(aiMessageIndex, 4, async () => delay(400))
+  await runStep(aiMessageIndex, 5, async () => delay(400))
+
+  const coursewareNote = `# 教学课件生成计划
+- 已根据教案关键节点生成PPT草稿大纲
+- 后台将在10分钟内完成排版并推送至“课件资料”栏
+- 建议教师拿到草稿后结合班级情况二次优化`
+
+  const videoNote = `# 教学视频制作排期
+- 自动提炼教案的重点板书与讲解要点
+- 生成口播脚本与镜头提示后将发送至“资源库/视频脚本”
+- 建议先查看教案成稿再安排录制`
+
+  messages.value[aiMessageIndex] = {
+    role: 'assistant',
+    content: `分析已完成！基于您提供的教学需求「${prompt}」，我已生成如下资源：
+
+- ✅ 课堂教案：结合学生画像与教学目标，形成完整授课流程
+- ✅ 课后作业：匹配教案重难点，区分基础与拓展题型
+- ⏳ 教学课件：PPT正在后台排队生成，稍后可在“教学资源”中查看草稿（将包含关键板块与板书提示）
+- ⏳ 教学视频脚本：口播要点与镜头脚本已排期，将同步到“资料”作为参考草案
+
+您可以立即预览或保存教案与作业，课件与视频脚本生成完成后会自动通知。`,
+    actions: [
+      { text: '查看作业', type: 'primary', data: { type: 'homework', content: homeworkContent, title: `${prompt}作业` } },
+      { text: '查看教案', type: 'success', data: { type: 'lesson_plan', content: lessonPlanContent, title: `${prompt}教案` } },
+      { text: '保存作业', type: 'info', data: { type: 'save_homework', content: homeworkContent, title: prompt } },
+      { text: '保存教案', type: 'warning', data: { type: 'save_lesson_plan', content: lessonPlanContent, title: prompt } }
+    ],
+    meta: {
+      coursewareNote,
+      videoNote
+    }
+  }
+}
+
 // 发送消息
 const sendMessage = async () => {
   if (!userInput.value.trim() || loading.value) return
@@ -977,205 +961,57 @@ const sendMessage = async () => {
   // 添加AI思考消息
   messages.value.push({
     role: 'assistant',
-    thinking: true
+    steps: [
+      { 
+        title: '分析教学大纲', 
+        description: '提取课程结构、重难点与评价目标', 
+        completed: false, 
+        current: true,
+        progress: 0
+      },
+      { 
+        title: '生成课后作业', 
+        description: '匹配知识结构与能力层级，形成梯度题目', 
+        completed: false, 
+        current: false,
+        progress: 0
+      },
+      { 
+        title: '构建教学教案', 
+        description: '编排教学流程与互动设计，突出重难点', 
+        completed: false, 
+        current: false,
+        progress: 0
+      },
+      { 
+        title: '排队生成课件', 
+        description: '同步教案要点，生成PPT草案并排版', 
+        completed: false, 
+        current: false,
+        progress: 0
+      },
+      { 
+        title: '准备视频脚本', 
+        description: '提炼口播要点与镜头提示，生成脚本草案', 
+        completed: false, 
+        current: false,
+        progress: 0
+      },
+      { 
+        title: '汇总教学建议', 
+        description: '形成可执行的课堂落地提示', 
+        completed: false, 
+        current: false,
+        progress: 0
+      }
+    ]
   })
   
   scrollToBottom()
   
   try {
-    // 模拟AI思考延迟
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    
-    // 更新AI消息，显示处理步骤
     const aiMessageIndex = messages.value.length - 1
-    messages.value[aiMessageIndex] = {
-      role: 'assistant',
-      content: '我正在分析您提供的教学大纲，准备生成相关资源...',
-      steps: [
-        { 
-          title: '正在分析教学大纲', 
-          description: '提取关键知识点和教学目标', 
-          completed: false, 
-          current: true,
-          progress: 0
-        },
-        { 
-          title: '正在分析预习题完成情况', 
-          description: '结合预习题完成情况分析', 
-          completed: false, 
-          current: false 
-        },
-        { 
-          title: '生成教案', 
-          description: '构建完整的教学流程和教学建议', 
-          completed: false, 
-          current: false 
-        },
-        { 
-          title: '生成教学课件', 
-          description: '制作教学PPT课件', 
-          completed: false, 
-          current: false 
-        },
-        { 
-          title: '生成习题', 
-          description: '生成教学资源相关的课后作业', 
-          completed: false, 
-          current: false 
-        },
-        { 
-          title: '生成教学视频', 
-          description: '生成多媒体教学视频参考', 
-          completed: false, 
-          current: false 
-        }
-      ]
-    }
-    
-    // 第一步：分析教学大纲
-    const step1Interval = setInterval(() => {
-      const currentStep = messages.value[aiMessageIndex].steps[0];
-      if (currentStep.progress < 100) {
-        currentStep.progress += 10;
-      } else {
-        clearInterval(step1Interval);
-        currentStep.completed = true;
-        currentStep.current = false;
-        
-        // 第二步：调用知识库
-        messages.value[aiMessageIndex].steps[1].current = true;
-        messages.value[aiMessageIndex].steps[1].progress = 0;
-        
-        const step2Interval = setInterval(() => {
-          const currentStep = messages.value[aiMessageIndex].steps[1];
-          if (currentStep.progress < 100) {
-            currentStep.progress += 15;
-          } else {
-            clearInterval(step2Interval);
-            currentStep.completed = true;
-            currentStep.current = false;
-            
-            // 第三步：生成预习作业
-            messages.value[aiMessageIndex].content = '我已完成教学大纲分析，正在生成教学资源...';
-            messages.value[aiMessageIndex].processing = '正在生成教案...';
-            messages.value[aiMessageIndex].progress = 0;
-            messages.value[aiMessageIndex].steps[2].current = true;
-            messages.value[aiMessageIndex].steps[2].progress = 0;
-            
-            startHomeworkGeneration();
-          }
-        }, 300);
-      }
-      scrollToBottom();
-    }, 250);
-    
-    // 生成作业
-    const startHomeworkGeneration = async () => {
-      // 模拟进度增加
-      const progressInterval = setInterval(() => {
-        if (messages.value[aiMessageIndex].progress < 90) {
-          messages.value[aiMessageIndex].progress += 5;
-          messages.value[aiMessageIndex].steps[2].progress += 5;
-        }
-      }, 300);
-      
-      // 实际生成作业内容
-      const homeworkContent = await generateContent(userMessage, 'homework');
-      
-      clearInterval(progressInterval);
-      messages.value[aiMessageIndex].progress = 100;
-      messages.value[aiMessageIndex].steps[2].progress = 100;
-      messages.value[aiMessageIndex].steps[2].completed = true;
-      messages.value[aiMessageIndex].steps[2].current = false;
-      
-      // 生成教学资源
-      messages.value[aiMessageIndex].processing = '正在生成教学课件...';
-      messages.value[aiMessageIndex].progress = 0;
-      messages.value[aiMessageIndex].steps[3].current = true;
-      messages.value[aiMessageIndex].steps[3].progress = 0;
-      
-      const resourceProgressInterval = setInterval(() => {
-        if (messages.value[aiMessageIndex].progress < 95) {
-          messages.value[aiMessageIndex].progress += 5;
-          messages.value[aiMessageIndex].steps[3].progress += 5;
-        }
-      }, 300);
-      
-      // 延迟模拟资源生成完成
-      await new Promise(resolve => setTimeout(resolve, 5000));
-      
-      clearInterval(resourceProgressInterval);
-      messages.value[aiMessageIndex].progress = 100;
-      messages.value[aiMessageIndex].steps[3].progress = 100;
-      messages.value[aiMessageIndex].steps[3].completed = true;
-      messages.value[aiMessageIndex].steps[3].current = false;
-      
-      // 生成教学视频
-      messages.value[aiMessageIndex].processing = '正在生成课后作业...';
-      messages.value[aiMessageIndex].progress = 0;
-      messages.value[aiMessageIndex].steps[4].current = true;
-      messages.value[aiMessageIndex].steps[4].progress = 0;
-      
-      const videoProgressInterval = setInterval(() => {
-        if (messages.value[aiMessageIndex].progress < 95) {
-          messages.value[aiMessageIndex].progress += 7;
-          messages.value[aiMessageIndex].steps[4].progress += 7;
-        }
-      }, 280);
-      
-      // 延迟模拟视频生成完成
-      await new Promise(resolve => setTimeout(resolve, 4000));
-      
-      clearInterval(videoProgressInterval);
-      messages.value[aiMessageIndex].progress = 100;
-      messages.value[aiMessageIndex].steps[4].progress = 100;
-      messages.value[aiMessageIndex].steps[4].completed = true;
-      messages.value[aiMessageIndex].steps[4].current = false;
-      
-      // 生成作业
-      messages.value[aiMessageIndex].processing = '正在生成教学视频...';
-      messages.value[aiMessageIndex].progress = 0;
-      messages.value[aiMessageIndex].steps[5].current = true;
-      messages.value[aiMessageIndex].steps[5].progress = 0;
-      
-      const lessonProgressInterval = setInterval(() => {
-        if (messages.value[aiMessageIndex].progress < 95) {
-          messages.value[aiMessageIndex].progress += 8;
-          messages.value[aiMessageIndex].steps[5].progress += 8;
-        }
-      }, 250);
-      
-      // 实际生成教案内容
-      const lessonPlanContent = await generateContent(userMessage, 'lesson_plan');
-      
-      clearInterval(lessonProgressInterval);
-      messages.value[aiMessageIndex].progress = 100;
-      messages.value[aiMessageIndex].steps[5].progress = 100;
-      messages.value[aiMessageIndex].steps[5].completed = true;
-      messages.value[aiMessageIndex].steps[5].current = false;
-      
-      // 等待一会儿后显示最终结果
-      await new Promise(resolve => setTimeout(resolve, 800));
-      
-      // 创建课件和视频内容
-      const coursewareContent = "# 教学课件\n\n您可以根据教案内容自行编辑调整此课件，适应您的教学风格和需求。\n\n" + lessonPlanContent;
-      const videoContent = "# 教学视频脚本\n\n这是基于教案内容生成的视频脚本参考，您可以据此制作教学视频。\n\n" + lessonPlanContent.substring(0, Math.floor(lessonPlanContent.length * 0.7));
-      
-      // 显示最终结果
-      messages.value[aiMessageIndex] = {
-        role: 'assistant',
-        content: `我已完成分析并生成了教学资源。根据您提供的教学大纲「${userMessage}」，为您准备了以下内容：（生成视频已保存至“资料”）`,
-        actions: [
-          { text: '查看作业', type: 'primary', data: { type: 'homework', content: homeworkContent, title: `${userMessage}作业` } },
-          { text: '查看教案', type: 'success', data: { type: 'lesson_plan', content: lessonPlanContent, title: `${userMessage}教案` } },
-          // { text: '查看课件', type: 'warning', data: { type: 'courseware', content: coursewareContent, title: `${userMessage}课件` } },
-          // { text: '查看视频脚本', type: 'info', data: { type: 'video', content: videoContent, title: `${userMessage}视频脚本` } },
-          { text: '保存作业', type: 'info', data: { type: 'save_homework', content: homeworkContent, title: userMessage } },
-          { text: '保存教案', type: 'warning', data: { type: 'save_lesson_plan', content: lessonPlanContent, title: userMessage } }
-        ]
-      };
-    };
-    
+    await processGeneration(userMessage, aiMessageIndex)
   } catch (error) {
     console.error('Error generating content:', error)
     
@@ -1185,6 +1021,7 @@ const sendMessage = async () => {
       role: 'assistant',
       content: `很抱歉，生成内容时出现错误：${error.message}`
     }
+    ElMessage.error(error.message || '生成内容失败，请稍后再试')
   } finally {
     loading.value = false
     scrollToBottom()
@@ -1465,42 +1302,46 @@ onBeforeUnmount(() => {
 .editor-card {
   flex: 1;
   background: #fff;
-  border-radius: 12px;
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
+  border-radius: var(--card-radius);
+  border: 1px solid rgba(226, 232, 240, 0.7);
+  box-shadow: var(--card-shadow-soft);
   overflow: hidden;
   display: flex;
   flex-direction: column;
   height: 100%;
-  transition: all 0.3s ease;
+  transition: transform var(--transition-base), box-shadow var(--transition-base);
 }
 
-.card-header {
+.feature-card :deep(.app-card__header),
+.editor-card :deep(.app-card__header) {
   display: flex;
   align-items: center;
   padding: 16px 20px;
-  background: #f5f7fa;
+  background: linear-gradient(180deg, #f9fbff 0%, #f3f4f6 100%);
   border-bottom: 1px solid #ebeef5;
   position: relative;
 }
 
-.card-header .el-icon {
-  font-size: 24px;
+.feature-card :deep(.app-card__icon),
+.editor-card :deep(.app-card__icon) {
+  background: rgba(64, 158, 255, 0.12);
   color: #409eff;
-  margin-right: 12px;
 }
 
-.card-header h3 {
-  margin: 0;
+.feature-card :deep(.app-card__title),
+.editor-card :deep(.app-card__title) {
   color: #333;
-  font-weight: 600;
-  flex: 1;
+}
+
+.feature-card:hover,
+.editor-card:hover {
+  box-shadow: var(--card-shadow);
 }
 
 .card-tools {
-  position: absolute;
-  right: 16px;
-  top: 50%;
-  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .card-content {
@@ -1509,6 +1350,46 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+.guide-banner {
+  padding: 18px 20px;
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.08), rgba(99, 102, 241, 0.08));
+  border-bottom: 1px solid rgba(59, 130, 246, 0.12);
+  color: #1e293b;
+}
+
+.guide-banner h4 {
+  margin: 0 0 8px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.guide-banner p {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: #475569;
+}
+
+.guide-banner ul {
+  margin: 0 0 12px 16px;
+  padding: 0;
+  color: #334155;
+  font-size: 13px;
+}
+
+.guide-banner li {
+  margin-bottom: 4px;
+}
+
+.guide-fade-enter-active,
+.guide-fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.guide-fade-enter-from,
+.guide-fade-leave-to {
+  opacity: 0;
 }
 
 .editor-content {
@@ -1589,9 +1470,9 @@ onBeforeUnmount(() => {
 
 /* ========== Text Content Styles ========== */
 .content-text {
-  line-height: 1.6;
+  line-height: 1.7;
   font-size: 14px;
-  color:rgb(104, 92, 92);
+  color: #1f2937;
 }
 
 .content-text :deep(h1) {

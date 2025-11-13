@@ -2,7 +2,8 @@ import {
   Tools,
   ChatDotRound,
   PictureFilled,
-  DataAnalysis
+  DataAnalysis,
+  QuestionFilled
 } from '@element-plus/icons-vue';
 
 const menuItems = [
@@ -14,6 +15,11 @@ const menuItems = [
         title: 'AI对话',
         icon: 'ChatDotRound',
         route: '/home/tools/ai-comparison'
+      },
+      {
+        title: '智能答疑',
+        icon: 'QuestionFilled',
+        route: '/home/tools/intelligent-qa'
       },
       {
         title: 'PPT生成',

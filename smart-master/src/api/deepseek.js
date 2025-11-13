@@ -1,7 +1,19 @@
 import axios from 'axios';
 
-const API_KEY = 'sk-4c93e30ce1af467eb28d8efd7f44e225'; // 请替换为您的实际API密钥
-const API_URL = 'https://api.deepseek.com/v1/chat/completions';
+const API_KEY = 'sk-c3726fe19db643b9bc6b95020df7ad0a';
+const API_URL = 'https://api.deepseek.com/chat/completions';
+
+const extractJson = (text) => {
+  if (!text) return null;
+  const jsonBlock = text.match(/```json\s*([\s\S]*?)```/i);
+  const raw = jsonBlock ? jsonBlock[1].trim() : text.trim();
+  try {
+    return JSON.parse(raw);
+  } catch (error) {
+    console.error('解析JSON失败:', error, raw);
+    return null;
+  }
+};
 
 /**
  * 调用DeepSeek API生成内容
@@ -154,5 +166,186 @@ export const generateContent = async (prompt, type) => {
   } catch (error) {
     console.error('API调用失败:', error);
     throw new Error('生成内容失败，请稍后再试');
+  }
+};
+
+/**
+ * 调用DeepSeek API审批作业
+ * @param {Object} payload
+ * @param {string} payload.homeworkTitle - 作业标题
+ * @param {string} payload.homeworkContent - 作业原始内容（Markdown）
+ * @param {string} payload.studentName - 学生姓名
+ * @param {string} payload.studentAnswers - 学生作答内容
+ * @returns {Promise<Object>} 审批结果
+ */
+export const reviewHomework = async (payload) => {
+  const { homeworkTitle, homeworkContent, studentName, studentAnswers } = payload;
+
+  if (!homeworkTitle || !homeworkContent || !studentAnswers) {
+    throw new Error('请提供完整的作业与学生答案信息');
+  }
+
+  const systemPrompt = `你是一名严格且具有亲和力的教研员，需要根据教师提供的作业题目与学生答案进行批改。
+请遵守以下要求：
+1. 输出必须是JSON格式，不要包含任何解释或额外文本。
+2. JSON结构：
+{
+  "summary": "整体评价，建议控制在80字以内",
+  "score": {
+    "total": 100,
+    "obtained": number
+  },
+  "questions": [
+    {
+      "index": number, // 题号，从1开始
+      "question": "题目原文",
+      "correctAnswer": "标准答案或要点",
+      "studentAnswer": "学生作答",
+      "isCorrect": true/false,
+      "feedback": "针对该题的点评，提供改进建议"
+    }
+  ]
+}
+3. 如果题目为开放题，可根据要点判定，允许部分正确但需指出不足。
+4. 必须确保JSON可被直接解析，不能出现未转义的换行或多余逗号。`;
+
+  const userPrompt = `# 作业审批请求
+
+## 作业信息
+- 标题: ${homeworkTitle}
+- 内容 (Markdown):
+${homeworkContent}
+
+## 学生信息
+- 姓名: ${studentName || '未提供'}
+- 作答内容:
+${studentAnswers}`;
+
+  try {
+    const response = await axios.post(
+      API_URL,
+      {
+        model: 'deepseek-chat',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
+        ],
+        temperature: 0.3,
+        max_tokens: 2000
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${API_KEY}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    const content =
+      response?.data?.choices && response.data.choices.length > 0
+        ? response.data.choices[0].message.content
+        : '';
+
+    const parsed = extractJson(content);
+
+    if (!parsed) {
+      throw new Error('AI返回数据解析失败，请稍后重试');
+    }
+
+    return parsed;
+  } catch (error) {
+    console.error('作业审批失败:', error);
+    if (error?.response?.data?.error?.message) {
+      throw new Error(error.response.data.error.message);
+    }
+    throw new Error(error.message || '作业审批失败，请稍后再试');
+  }
+};
+
+/**
+ * 调用DeepSeek API进行智能答疑
+ * @param {Object} payload
+ * @param {string} payload.question - 学生提出的问题
+ * @param {Object} payload.studentProfile - 学生画像数据
+ * @returns {Promise<string>} 智能答疑结果（Markdown）
+ */
+export const askIntelligentTutor = async (payload) => {
+  const { question, studentProfile = {} } = payload || {};
+
+  if (!question || !question.trim()) {
+    throw new Error('请先输入学生问题');
+  }
+
+  const {
+    studentName = '未提供',
+    strengths = '',
+    weaknesses = '',
+    recentFocus = '',
+    recentAnswers = ''
+  } = studentProfile;
+
+  const systemPrompt = `你是一名具有深度学习能力的智能教学助理，能够根据学生的知识图谱、历史作业表现、优势与薄弱项进行个性化答疑。
+在回答时请遵守以下规范：
+1. 输出使用Markdown格式，结构需包含以下模块：
+   - **学习画像洞察**：分成“优势洞察”和“薄弱环节”两个小节，以条目形式描述（即便信息有限也要作出合理推断，但要自然可信）。
+   - **针对性解答**：以步骤或要点形式回应学生问题，引用相关知识点，突出与学生画像的关联。
+   - **后续练习建议**：给出2-3条可执行的练习或复习建议，可结合学生薄弱项。
+2. 语气亲切专业，回答要体现“已充分理解学生的学习情况”。
+3. 如缺少真实数据，请基于问题内容做出合理的分析推断，但不要暴露你是在猜测。`;
+
+  const stitchedProfile = `
+学生姓名：${studentName}
+已知优势：${strengths || '未提供具体优势'}
+薄弱项：${weaknesses || '未提供薄弱项'}
+近期关注的知识点：${recentFocus || '未提供'}
+作答情况摘要：${recentAnswers || '无'}
+`;
+
+  const userPrompt = `# 学生智能答疑请求
+
+## 学生画像
+${stitchedProfile}
+
+## 学生提问
+${question}
+
+请结合学生画像进行个性化分析和解答。`;
+
+  try {
+    const response = await axios.post(
+      API_URL,
+      {
+        model: 'deepseek-chat',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
+        ],
+        temperature: 0.65,
+        max_tokens: 1800
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${API_KEY}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    const content =
+      response?.data?.choices && response.data.choices.length > 0
+        ? response.data.choices[0].message.content
+        : '';
+
+    if (!content) {
+      throw new Error('AI未返回内容，请稍后重试');
+    }
+
+    return content;
+  } catch (error) {
+    console.error('智能答疑失败:', error);
+    if (error?.response?.data?.error?.message) {
+      throw new Error(error.response.data.error.message);
+    }
+    throw new Error(error.message || '智能答疑失败，请稍后再试');
   }
 };

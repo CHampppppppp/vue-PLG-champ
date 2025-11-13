@@ -25,6 +25,10 @@
             <el-icon><Monitor /></el-icon>
             <span>学情分析</span>
           </el-menu-item>
+          <el-menu-item index="/home/tools/intelligent-qa">
+            <el-icon><Monitor /></el-icon>
+            <span>智能答疑</span>
+          </el-menu-item>
           
           <el-menu-item index="/home/courseware">
             <el-icon><Files /></el-icon>
@@ -177,8 +181,7 @@ const switchTool = (tool) => {
 // 处理下拉菜单命令
 const handleCommand = (command) => {
   if (command === 'logout') {
-    localStorage.removeItem('isAuthenticated')
-    localStorage.removeItem('userInfo')
+    userStore.logout()
     router.push('/login')
   }
   if(command === 'profile'){

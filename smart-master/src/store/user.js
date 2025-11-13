@@ -23,8 +23,11 @@ export const useUserStore = defineStore('user', {
       this.userInfo = null
       this.isAuthenticated = false
       this.lastSeen = new Date().toISOString()
-      localStorage.removeItem('isAuthenticated')
-      localStorage.removeItem('userInfo')
+      try {
+        localStorage.clear()
+      } catch (error) {
+        console.error('清理本地存储失败:', error)
+      }
     },
     
     //根据保存数据恢复登录状态

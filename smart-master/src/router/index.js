@@ -35,6 +35,14 @@ const routes = [
         component: () => import('../views/tools/aiComparison/index.vue')
       },
       {
+        path: 'tools/intelligent-qa',
+        name: 'IntelligentQA',
+        component: () => import('@/views/tools/intelligentQA/index.vue'),
+        meta: {
+          title: '智能答疑'
+        }
+      },
+      {
         path: 'learning-assistant',
         name: 'LearningAssistant',
         component: () => import('../views/tools/learningAssistant/index.vue')
