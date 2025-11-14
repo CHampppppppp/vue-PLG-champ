@@ -34,7 +34,7 @@
                   title="提示"
                   type="info"
                   :closable="false"
-                  description="支持 Ctrl + Enter 快速发送，生成期间可在右侧编辑器实时查看内容。"
+                  description="支持 Ctrl + Enter 快速发送"
                   show-icon
                 />
               </div>
