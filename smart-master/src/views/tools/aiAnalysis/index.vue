@@ -5,7 +5,7 @@
 </template>
 
 <script setup>
-import ChatPanel from '../../../components/ChatPanel.vue'
+import ChatPanel from '@/components/ChatPanel.vue'
 </script>
 
 <style scoped>
@@ -13,4 +13,4 @@ import ChatPanel from '../../../components/ChatPanel.vue'
   height: 100%;
   padding: 10px;
 }
-</style> 
+</style>
